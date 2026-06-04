@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      { "command": "node ./hooks/agent-traffic-light/set-light.mjs green" }
+    ],
+    "sessionEnd": [
+      { "command": "node ./hooks/agent-traffic-light/set-light.mjs green" }
+    ],
+    "beforeSubmitPrompt": [
+      { "command": "node ./hooks/agent-traffic-light/set-light.mjs yellow" }
+    ],
+    "afterAgentThought": [
+      { "command": "node ./hooks/agent-traffic-light/set-light.mjs yellow" }
+    ],
+    "afterAgentResponse": [
+      { "command": "node ./hooks/agent-traffic-light/set-light.mjs yellow" }
+    ],
+    "preToolUse": [
+      { "command": "node ./hooks/agent-traffic-light/set-light.mjs yellow" }
+    ],
+    "postToolUse": [
+      { "command": "node ./hooks/agent-traffic-light/set-light.mjs yellow" }
+    ],
+    "beforeShellExecution": [
+      { "command": "node ./hooks/agent-traffic-light/hook-shell.mjs" }
+    ],
+    "afterShellExecution": [
+      { "command": "node ./hooks/agent-traffic-light/set-light.mjs yellow" }
+    ],
+    "beforeMCPExecution": [
+      { "command": "node ./hooks/agent-traffic-light/hook-mcp.mjs" }
+    ],
+    "afterMCPExecution": [
+      { "command": "node ./hooks/agent-traffic-light/set-light.mjs yellow" }
+    ],
+    "stop": [
+      { "command": "node ./hooks/agent-traffic-light/set-light.mjs green" }
+    ]
+  }
+}

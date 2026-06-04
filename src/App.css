@@ -1,0 +1,89 @@
+/* 对齐 Figma：细长竖条、gap-5 量级、无底板，窗口透明 */
+:root {
+  --bulb: 52px;
+  --gap: 12px;
+  --pad-x: 6px;
+  --pad-y: 8px;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+}
+
+.app-root {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+}
+
+.traffic-strip {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap);
+  padding: var(--pad-y) var(--pad-x);
+  margin: auto;
+  background: rgba(30, 30, 30, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1.5rem;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  cursor: move;
+}
+
+.traffic-bulb {
+  width: var(--bulb);
+  height: var(--bulb);
+  flex-shrink: 0;
+  border-radius: 50%;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.traffic-bulb--blink {
+  background-color: #facc15;
+  animation: yellow-blink 3.2s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+  will-change: background-color, box-shadow, opacity;
+}
+
+@keyframes yellow-blink {
+  0%,
+  100% {
+    background-color: #facc15;
+    box-shadow:
+      0 0 32px rgba(250, 204, 21, 0.6),
+      inset 0 0 16px rgba(255, 255, 255, 0.2);
+    opacity: 1;
+  }
+  22% {
+    background-color: #c9a012;
+    box-shadow:
+      0 0 18px rgba(250, 204, 21, 0.35),
+      inset 0 0 12px rgba(255, 255, 255, 0.12);
+    opacity: 0.78;
+  }
+  50% {
+    background-color: #4a4020;
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.4);
+    opacity: 0.5;
+  }
+  78% {
+    background-color: #c9a012;
+    box-shadow:
+      0 0 18px rgba(250, 204, 21, 0.35),
+      inset 0 0 12px rgba(255, 255, 255, 0.12);
+    opacity: 0.78;
+  }
+}

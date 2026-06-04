@@ -1,0 +1,67 @@
+Cursor Agent 红绿灯（Tauri 桌面小窗）
+========================================
+
+目录可整体拷贝到任意位置使用。
+
+一、安装依赖
+  1. Rust（国内请用镜像，见下方「Rust 国内镜像」）
+  2. Windows 还需 Visual Studio C++ 构建工具（见 Tauri 前置文档）
+
+Rust 国内镜像（PowerShell，安装 rustup 前或报错后执行一次）:
+  [System.Environment]::SetEnvironmentVariable('RUSTUP_DIST_SERVER','https://mirrors.tuna.tsinghua.edu.cn/rustup','User')
+  [System.Environment]::SetEnvironmentVariable('RUSTUP_UPDATE_ROOT','https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup','User')
+  关闭并重新打开终端，再运行:
+  rustup default stable
+  或重新运行 rustup-init.exe，选默认安装。
+
+  验证: cargo --version
+
+  若仍报 Connect / 积极拒绝:
+  - 检查系统/浏览器代理是否错误（可先关掉 VPN/代理再试）
+  - 换镜像试 rsproxy:
+    RUSTUP_DIST_SERVER=https://rsproxy.cn
+    RUSTUP_UPDATE_ROOT=https://rsproxy.cn/rustup
+
+  编译 Tauri 时 cargo 拉 crate 也慢，可在
+  %USERPROFILE%\.cargo\config.toml 写清华源（见清华镜像站 help/rustup）
+  3. 在本目录执行:
+       npm install
+       npm run tauri dev
+
+二、安装 Cursor Hooks（用户级）
+  PowerShell:
+    .\hooks-install\install-hooks.ps1
+  Git Bash:
+    bash hooks-install/install-hooks.sh
+
+  必须把 hooks-install/hooks.json 复制为（不是放在子目录里）:
+    %USERPROFILE%\.cursor\hooks.json
+  脚本目录保持为:
+    %USERPROFILE%\.cursor\hooks\agent-traffic-light\*.mjs
+  错误示例（Cursor 不会读）:
+    hooks-install\hooks.json
+    .cursor\hooks\agent-traffic-light\hooks.json
+  保存后重启 Cursor，在设置里 Hooks 页应能看到配置。
+
+三、状态含义
+  绿 = 已完成（stop / sessionEnd），常亮
+  黄 = 思考 / 回答 / 执行中，慢闪（约 3.2 秒一轮）
+  红 = 待确认命令（hook-shell 命中规则）或 30 秒无更新（已停顿）
+  红（停顿）= 进行中但状态文件超过 30 秒未更新（仅桌面端判断）
+
+  停顿阈值在 src/App.tsx 的 IDLE_MS（默认 30000）可改。
+
+四、状态文件
+  默认: %USERPROFILE%\.cursor\agent-traffic-light-state.json
+  可设环境变量 AGENT_TRAFFIC_LIGHT_STATE 指向其它路径。
+
+五、打包（免安装单 exe）
+  npm run build:exe
+  可执行文件: src-tauri/target/release/cursor-agent-traffic-light.exe
+  双击即可运行，无需 NSIS 安装程序。
+  需系统已安装 WebView2 运行时（Win10/11 通常自带）。
+
+手动测灯（无需 Cursor）:
+  node hooks-install/scripts/set-light.mjs red
+  node hooks-install/scripts/set-light.mjs yellow
+  node hooks-install/scripts/set-light.mjs green
