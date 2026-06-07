@@ -1,9 +1,16 @@
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager, WindowEvent};
+use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_store::StoreExt;
+
+const STORE_FILE: &str = "settings.json";
+const IDLE_MS_KEY: &str = "idle_ms";
+const NOTIFY_ON_COMPLETE_KEY: &str = "notify_on_complete";
+const DEFAULT_IDLE_MS: u64 = 30_000;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -16,6 +23,21 @@ pub struct TrafficLightState {
     pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct AppSettings {
+    pub idle_ms: u64,
+    pub notify_on_complete: bool,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            idle_ms: DEFAULT_IDLE_MS,
+            notify_on_complete: false,
+        }
+    }
 }
 
 impl TrafficLightState {
@@ -58,7 +80,45 @@ fn emit_state(app: &AppHandle, path: &PathBuf) {
     let _ = app.emit("traffic-light-changed", state);
 }
 
-fn start_state_watcher(app: AppHandle, path: PathBuf) {
+fn load_settings(app: &AppHandle) -> AppSettings {
+    if let Ok(store) = app.store(STORE_FILE) {
+        let idle_ms = store
+            .get(IDLE_MS_KEY)
+            .and_then(|v| v.as_u64())
+            .unwrap_or(DEFAULT_IDLE_MS);
+        let notify_on_complete = store
+            .get(NOTIFY_ON_COMPLETE_KEY)
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        return AppSettings {
+            idle_ms,
+            notify_on_complete,
+        };
+    }
+    AppSettings::default()
+}
+
+fn save_settings(app: &AppHandle, settings: &AppSettings) {
+    if let Ok(store) = app.store(STORE_FILE) {
+        let _ = store.set(IDLE_MS_KEY, settings.idle_ms);
+        let _ = store.set(NOTIFY_ON_COMPLETE_KEY, settings.notify_on_complete);
+        let _ = store.save();
+    }
+}
+
+fn maybe_notify_completion(app: &AppHandle, prev: &str, current: &str) {
+    if prev != "green" && current == "green" {
+        let settings = load_settings(app);
+        if settings.notify_on_complete {
+            let _ = app.notification().builder()
+                .title("Cursor Agent")
+                .body("任务完成")
+                .show();
+        }
+    }
+}
+
+fn start_state_watcher(app: AppHandle, path: PathBuf, last_light: Arc<Mutex<String>>) {
     let parent = path
         .parent()
         .map(|p| p.to_path_buf())
@@ -92,6 +152,11 @@ fn start_state_watcher(app: AppHandle, path: PathBuf) {
                     match event.kind {
                         EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
                             if event.paths.iter().any(|p| p == &path) {
+                                let new_state = read_state_file(&path);
+                                let mut last = last_light.lock().unwrap();
+                                maybe_notify_completion(&app, &last, &new_state.light);
+                                *last = new_state.light.clone();
+                                drop(last);
                                 emit_state(&app, &path);
                             }
                         }
@@ -116,20 +181,59 @@ fn get_state_file_path() -> String {
     resolve_state_path().to_string_lossy().into_owned()
 }
 
+#[tauri::command]
+fn get_settings(app: AppHandle) -> AppSettings {
+    load_settings(&app)
+}
+
+#[tauri::command]
+fn set_settings(app: AppHandle, settings: AppSettings) {
+    save_settings(&app, &settings);
+    let _ = app.emit("settings-changed", settings);
+}
+
+#[tauri::command]
+fn show_settings_window(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("settings") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let last_light = Arc::new(Mutex::new("green".to_string()));
+
     tauri::Builder::default()
-        .setup(|app| {
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
+        .setup(move |app| {
             let path = resolve_state_path();
             if let Some(dir) = path.parent() {
                 let _ = std::fs::create_dir_all(dir);
             }
-            start_state_watcher(app.handle().clone(), path);
+
+            start_state_watcher(app.handle().clone(), path, last_light.clone());
+
+            // 设置窗口关闭时不退出，只隐藏
+            if let Some(window) = app.get_webview_window("settings") {
+                let window_handle = window.clone();
+                window.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = window_handle.hide();
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_traffic_light_state,
-            get_state_file_path
+            get_state_file_path,
+            get_settings,
+            set_settings,
+            show_settings_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

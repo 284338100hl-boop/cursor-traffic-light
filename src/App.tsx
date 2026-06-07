@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -13,7 +13,12 @@ type TrafficLightPayload = {
   blink?: boolean;
 };
 
-const IDLE_MS = 30_000;
+type AppSettings = {
+  idle_ms: number;
+  notify_on_complete: boolean;
+};
+
+const DEFAULT_IDLE_MS = 30_000;
 
 const LIGHTS: LightState[] = ["red", "yellow", "green"];
 
@@ -51,11 +56,6 @@ function normalizeLight(value: string | undefined): LightState {
   return "green";
 }
 
-function startDrag(e: React.MouseEvent) {
-  if (e.button !== 0) return;
-  void getCurrentWindow().startDragging().catch(() => {});
-}
-
 function App() {
   const [fileState, setFileState] = useState<TrafficLightPayload>({
     light: "green",
@@ -63,6 +63,9 @@ function App() {
     blink: false,
   });
   const [now, setNow] = useState(Date.now());
+  const [idleMs, setIdleMs] = useState(DEFAULT_IDLE_MS);
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     const tick = window.setInterval(() => setNow(Date.now()), 500);
@@ -72,6 +75,7 @@ function App() {
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
+    let unlistenSettings: (() => void) | undefined;
 
     const applyPayload = (payload: TrafficLightPayload) => {
       setFileState({
@@ -84,9 +88,12 @@ function App() {
 
     void (async () => {
       try {
-        const initial =
-          await invoke<TrafficLightPayload>("get_traffic_light_state");
-        if (!cancelled) applyPayload(initial);
+        const initial = await invoke<TrafficLightPayload>("get_traffic_light_state");
+        const settings = await invoke<AppSettings>("get_settings");
+        if (!cancelled) {
+          applyPayload(initial);
+          setIdleMs(settings.idle_ms);
+        }
       } catch {
         /* 浏览器预览时无 Tauri */
       }
@@ -97,18 +104,55 @@ function App() {
           if (!cancelled) applyPayload(event.payload);
         },
       );
+
+      unlistenSettings = await listen<AppSettings>(
+        "settings-changed",
+        (event) => {
+          if (!cancelled) setIdleMs(event.payload.idle_ms);
+        },
+      );
     })();
 
     return () => {
       cancelled = true;
       unlisten?.();
+      unlistenSettings?.();
     };
+  }, []);
+
+  // 点击其他地方关闭菜单
+  useEffect(() => {
+    if (!menuVisible) return;
+    const closeMenu = () => setMenuVisible(false);
+    window.addEventListener("click", closeMenu);
+    return () => window.removeEventListener("click", closeMenu);
+  }, [menuVisible]);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button === 2) {
+      // 右键
+      e.preventDefault();
+      setMenuPos({ x: e.clientX, y: e.clientY });
+      setMenuVisible(true);
+    } else if (e.button === 0) {
+      // 左键拖动
+      void getCurrentWindow().startDragging().catch(() => {});
+    }
+  }, []);
+
+  const handleSettings = useCallback(() => {
+    void invoke("show_settings_window");
+    setMenuVisible(false);
+  }, []);
+
+  const handleExit = useCallback(() => {
+    void getCurrentWindow().close().catch(() => {});
   }, []);
 
   const fileLight = normalizeLight(fileState.light);
   const lastAt = fileState.updatedAt ?? 0;
   const isWorking = fileLight === "yellow";
-  const isIdle = isWorking && lastAt > 0 && now - lastAt >= IDLE_MS;
+  const isIdle = isWorking && lastAt > 0 && now - lastAt >= idleMs;
 
   const displayLight: LightState = isIdle ? "red" : fileLight;
   const yellowBlink =
@@ -118,8 +162,9 @@ function App() {
     <div className="app-root">
       <div
         className="traffic-strip"
-        onMouseDown={startDrag}
-        title="拖动移动窗口"
+        onMouseDown={handleMouseDown}
+        onContextMenu={(e) => e.preventDefault()}
+        title="左键拖动，右键菜单"
       >
         {LIGHTS.map((light) => {
           const active = displayLight === light;
@@ -155,6 +200,21 @@ function App() {
           );
         })}
       </div>
+
+      {menuVisible && (
+        <div
+          className="context-menu"
+          style={{ left: menuPos.x, top: menuPos.y }}
+        >
+          <div className="menu-item" onClick={handleSettings}>
+            设置
+          </div>
+          <div className="menu-divider" />
+          <div className="menu-item" onClick={handleExit}>
+            退出
+          </div>
+        </div>
+      )}
     </div>
   );
 }
