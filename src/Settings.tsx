@@ -6,6 +6,7 @@ import "./Settings.css";
 type AppSettings = {
   idle_ms: number;
   notify_on_complete: boolean;
+  always_on_top: boolean;
 };
 
 const IDLE_MS_OPTIONS = [
@@ -20,6 +21,7 @@ function Settings() {
   const [settings, setSettings] = useState<AppSettings>({
     idle_ms: 30000,
     notify_on_complete: false,
+    always_on_top: true,
   });
   const [saved, setSaved] = useState(false);
 
@@ -38,6 +40,12 @@ function Settings() {
 
   const handleNotifyToggle = () => {
     const newSettings = { ...settings, notify_on_complete: !settings.notify_on_complete };
+    setSettings(newSettings);
+    saveSettings(newSettings);
+  };
+
+  const handleAlwaysOnTopToggle = () => {
+    const newSettings = { ...settings, always_on_top: !settings.always_on_top };
     setSettings(newSettings);
     saveSettings(newSettings);
   };
@@ -67,6 +75,21 @@ function Settings() {
           ))}
         </select>
         <p className="hint">黄灯超过此时间无更新将转为红灯</p>
+      </div>
+
+      <div className="setting-row">
+        <div className="toggle-row">
+          <label htmlFor="always-on-top-toggle">窗口置顶</label>
+          <button
+            id="always-on-top-toggle"
+            className={`toggle ${settings.always_on_top ? "on" : "off"}`}
+            onClick={handleAlwaysOnTopToggle}
+            aria-pressed={settings.always_on_top}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+        <p className="hint">红绿灯窗口始终显示在其他窗口之上</p>
       </div>
 
       <div className="setting-row">

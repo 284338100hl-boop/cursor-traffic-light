@@ -10,6 +10,7 @@
     "core:window:allow-show",
     "core:window:allow-hide",
     "core:window:allow-close",
+    "core:window:allow-set-always-on-top",
     "store:default",
     "notification:default",
     "notification:allow-request-permission"

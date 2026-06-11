@@ -10,6 +10,7 @@ use tauri_plugin_store::StoreExt;
 const STORE_FILE: &str = "settings.json";
 const IDLE_MS_KEY: &str = "idle_ms";
 const NOTIFY_ON_COMPLETE_KEY: &str = "notify_on_complete";
+const ALWAYS_ON_TOP_KEY: &str = "always_on_top";
 const DEFAULT_IDLE_MS: u64 = 30_000;
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -29,6 +30,7 @@ pub struct TrafficLightState {
 pub struct AppSettings {
     pub idle_ms: u64,
     pub notify_on_complete: bool,
+    pub always_on_top: bool,
 }
 
 impl Default for AppSettings {
@@ -36,6 +38,7 @@ impl Default for AppSettings {
         Self {
             idle_ms: DEFAULT_IDLE_MS,
             notify_on_complete: false,
+            always_on_top: true,
         }
     }
 }
@@ -90,9 +93,14 @@ fn load_settings(app: &AppHandle) -> AppSettings {
             .get(NOTIFY_ON_COMPLETE_KEY)
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
+        let always_on_top = store
+            .get(ALWAYS_ON_TOP_KEY)
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
         return AppSettings {
             idle_ms,
             notify_on_complete,
+            always_on_top,
         };
     }
     AppSettings::default()
@@ -102,6 +110,7 @@ fn save_settings(app: &AppHandle, settings: &AppSettings) {
     if let Ok(store) = app.store(STORE_FILE) {
         let _ = store.set(IDLE_MS_KEY, settings.idle_ms);
         let _ = store.set(NOTIFY_ON_COMPLETE_KEY, settings.notify_on_complete);
+        let _ = store.set(ALWAYS_ON_TOP_KEY, settings.always_on_top);
         let _ = store.save();
     }
 }
@@ -189,6 +198,10 @@ fn get_settings(app: AppHandle) -> AppSettings {
 #[tauri::command]
 fn set_settings(app: AppHandle, settings: AppSettings) {
     save_settings(&app, &settings);
+    // 应用 always_on_top 设置到主窗口
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_always_on_top(settings.always_on_top);
+    }
     let _ = app.emit("settings-changed", settings);
 }
 
@@ -214,6 +227,12 @@ pub fn run() {
             }
 
             start_state_watcher(app.handle().clone(), path, last_light.clone());
+
+            // 应用启动时加载并应用 always_on_top 设置
+            let settings = load_settings(app.handle());
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_always_on_top(settings.always_on_top);
+            }
 
             // 设置窗口关闭时不退出，只隐藏
             if let Some(window) = app.get_webview_window("settings") {
