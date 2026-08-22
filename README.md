@@ -12,13 +12,15 @@
 
 停顿阈值可在 `src/App.tsx` 中修改 `IDLE_MS`（默认 `30000`）。
 
+> 说明：subagent（`Task` 工具）运行期间主 agent 处于等待，此时**不会**判定为停顿（黄灯持续）；悬停灯条可查看当前正在运行的任务列表（主对话 + 各 subagent 名称与类型）。
+
 ## 工作原理
 
 ```
 Cursor Hooks → ~/.cursor/agent-traffic-light-state.json → Tauri 监听 → 桌面小窗
 ```
 
-- Hooks 脚本：`hooks-install/scripts/`
+- Hooks 脚本：`hooks-install/scripts/`（`set-light.mjs` 会读取 hook 事件的 stdin，识别 `Task` 工具的进出并维护任务列表）
 - 状态文件默认路径：`%USERPROFILE%\.cursor\agent-traffic-light-state.json`
 - 自定义路径：设置环境变量 `AGENT_TRAFFIC_LIGHT_STATE`
 

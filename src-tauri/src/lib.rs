@@ -11,7 +11,20 @@ const STORE_FILE: &str = "settings.json";
 const IDLE_MS_KEY: &str = "idle_ms";
 const NOTIFY_ON_COMPLETE_KEY: &str = "notify_on_complete";
 const ALWAYS_ON_TOP_KEY: &str = "always_on_top";
+const SHOW_HOVER_TOOLTIP_KEY: &str = "show_hover_tooltip";
+const AUTO_LAUNCH_WITH_CURSOR_KEY: &str = "auto_launch_with_cursor";
+const EXE_PATH_KEY: &str = "exe_path";
 const DEFAULT_IDLE_MS: u64 = 30_000;
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityTask {
+    pub id: String,
+    pub kind: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r#type: Option<String>,
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,6 +37,8 @@ pub struct TrafficLightState {
     pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    #[serde(default)]
+    pub tasks: Vec<ActivityTask>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -31,6 +46,8 @@ pub struct AppSettings {
     pub idle_ms: u64,
     pub notify_on_complete: bool,
     pub always_on_top: bool,
+    pub show_hover_tooltip: bool,
+    pub auto_launch_with_cursor: bool,
 }
 
 impl Default for AppSettings {
@@ -39,6 +56,8 @@ impl Default for AppSettings {
             idle_ms: DEFAULT_IDLE_MS,
             notify_on_complete: false,
             always_on_top: true,
+            show_hover_tooltip: true,
+            auto_launch_with_cursor: false,
         }
     }
 }
@@ -51,6 +70,7 @@ impl TrafficLightState {
             blink: None,
             source: Some("default".into()),
             label: None,
+            tasks: Vec::new(),
         }
     }
 }
@@ -97,10 +117,20 @@ fn load_settings(app: &AppHandle) -> AppSettings {
             .get(ALWAYS_ON_TOP_KEY)
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
+        let show_hover_tooltip = store
+            .get(SHOW_HOVER_TOOLTIP_KEY)
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let auto_launch_with_cursor = store
+            .get(AUTO_LAUNCH_WITH_CURSOR_KEY)
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         return AppSettings {
             idle_ms,
             notify_on_complete,
             always_on_top,
+            show_hover_tooltip,
+            auto_launch_with_cursor,
         };
     }
     AppSettings::default()
@@ -111,19 +141,28 @@ fn save_settings(app: &AppHandle, settings: &AppSettings) {
         let _ = store.set(IDLE_MS_KEY, settings.idle_ms);
         let _ = store.set(NOTIFY_ON_COMPLETE_KEY, settings.notify_on_complete);
         let _ = store.set(ALWAYS_ON_TOP_KEY, settings.always_on_top);
+        let _ = store.set(SHOW_HOVER_TOOLTIP_KEY, settings.show_hover_tooltip);
+        let _ = store.set(AUTO_LAUNCH_WITH_CURSOR_KEY, settings.auto_launch_with_cursor);
         let _ = store.save();
     }
 }
 
-fn maybe_notify_completion(app: &AppHandle, prev: &str, current: &str) {
-    if prev != "green" && current == "green" {
-        let settings = load_settings(app);
-        if settings.notify_on_complete {
-            let _ = app.notification().builder()
-                .title("Cursor Agent")
-                .body("任务完成")
-                .show();
-        }
+fn maybe_notify_completion(app: &AppHandle, prev: &str, new_state: &TrafficLightState) {
+    if prev == "green" || new_state.light != "green" {
+        return;
+    }
+    let main_still_busy = new_state.tasks.iter().any(|t| t.kind == "subagent");
+    if main_still_busy {
+        return;
+    }
+    let settings = load_settings(app);
+    if settings.notify_on_complete {
+        let _ = app
+            .notification()
+            .builder()
+            .title("Cursor Agent")
+            .body("任务完成")
+            .show();
     }
 }
 
@@ -163,7 +202,7 @@ fn start_state_watcher(app: AppHandle, path: PathBuf, last_light: Arc<Mutex<Stri
                             if event.paths.iter().any(|p| p == &path) {
                                 let new_state = read_state_file(&path);
                                 let mut last = last_light.lock().unwrap();
-                                maybe_notify_completion(&app, &last, &new_state.light);
+                                maybe_notify_completion(&app, &last, &new_state);
                                 *last = new_state.light.clone();
                                 drop(last);
                                 emit_state(&app, &path);
@@ -227,6 +266,16 @@ pub fn run() {
             }
 
             start_state_watcher(app.handle().clone(), path, last_light.clone());
+
+            if let Ok(exe) = std::env::current_exe() {
+                if let Ok(store) = app.store(STORE_FILE) {
+                    let _ = store.set(
+                        EXE_PATH_KEY,
+                        exe.to_string_lossy().to_string(),
+                    );
+                    let _ = store.save();
+                }
+            }
 
             // 应用启动时加载并应用 always_on_top 设置
             let settings = load_settings(app.handle());

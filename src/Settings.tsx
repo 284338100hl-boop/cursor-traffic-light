@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./Settings.css";
 
@@ -7,6 +8,8 @@ type AppSettings = {
   idle_ms: number;
   notify_on_complete: boolean;
   always_on_top: boolean;
+  show_hover_tooltip: boolean;
+  auto_launch_with_cursor: boolean;
 };
 
 const IDLE_MS_OPTIONS = [
@@ -22,39 +25,45 @@ function Settings() {
     idle_ms: 30000,
     notify_on_complete: false,
     always_on_top: true,
+    show_hover_tooltip: true,
+    auto_launch_with_cursor: false,
   });
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    invoke<AppSettings>("get_settings").then((s) => {
-      setSettings(s);
-    });
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+
+    void (async () => {
+      const s = await invoke<AppSettings>("get_settings");
+      if (!cancelled) setSettings(s);
+
+      unlisten = await listen<AppSettings>("settings-changed", (event) => {
+        if (!cancelled) setSettings(event.payload);
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
   }, []);
-
-  const handleIdleMsChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newValue = parseInt(e.target.value, 10);
-    const newSettings = { ...settings, idle_ms: newValue };
-    setSettings(newSettings);
-    saveSettings(newSettings);
-  };
-
-  const handleNotifyToggle = () => {
-    const newSettings = { ...settings, notify_on_complete: !settings.notify_on_complete };
-    setSettings(newSettings);
-    saveSettings(newSettings);
-  };
-
-  const handleAlwaysOnTopToggle = () => {
-    const newSettings = { ...settings, always_on_top: !settings.always_on_top };
-    setSettings(newSettings);
-    saveSettings(newSettings);
-  };
 
   const saveSettings = (s: AppSettings) => {
     invoke("set_settings", { settings: s }).then(() => {
       setSaved(true);
       setTimeout(() => setSaved(false), 1000);
     });
+  };
+
+  const patchSettings = (patch: Partial<AppSettings>) => {
+    const next = { ...settings, ...patch };
+    setSettings(next);
+    saveSettings(next);
+  };
+
+  const handleIdleMsChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    patchSettings({ idle_ms: parseInt(e.target.value, 10) });
   };
 
   const closeWindow = () => {
@@ -83,7 +92,7 @@ function Settings() {
           <button
             id="always-on-top-toggle"
             className={`toggle ${settings.always_on_top ? "on" : "off"}`}
-            onClick={handleAlwaysOnTopToggle}
+            onClick={() => patchSettings({ always_on_top: !settings.always_on_top })}
             aria-pressed={settings.always_on_top}
           >
             <span className="toggle-knob" />
@@ -94,17 +103,55 @@ function Settings() {
 
       <div className="setting-row">
         <div className="toggle-row">
+          <label htmlFor="hover-tooltip-toggle">悬停显示对话名称</label>
+          <button
+            id="hover-tooltip-toggle"
+            className={`toggle ${settings.show_hover_tooltip ? "on" : "off"}`}
+            onClick={() =>
+              patchSettings({ show_hover_tooltip: !settings.show_hover_tooltip })
+            }
+            aria-pressed={settings.show_hover_tooltip}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+        <p className="hint">鼠标悬停红绿灯时显示当前对话标题</p>
+      </div>
+
+      <div className="setting-row">
+        <div className="toggle-row">
+          <label htmlFor="auto-launch-toggle">Cursor 启动时自动打开</label>
+          <button
+            id="auto-launch-toggle"
+            className={`toggle ${settings.auto_launch_with_cursor ? "on" : "off"}`}
+            onClick={() =>
+              patchSettings({
+                auto_launch_with_cursor: !settings.auto_launch_with_cursor,
+              })
+            }
+            aria-pressed={settings.auto_launch_with_cursor}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+        <p className="hint">Agent 会话开始时自动启动红绿灯（需先手动运行过一次）</p>
+      </div>
+
+      <div className="setting-row">
+        <div className="toggle-row">
           <label htmlFor="notify-toggle">任务完成提醒</label>
           <button
             id="notify-toggle"
             className={`toggle ${settings.notify_on_complete ? "on" : "off"}`}
-            onClick={handleNotifyToggle}
+            onClick={() =>
+              patchSettings({ notify_on_complete: !settings.notify_on_complete })
+            }
             aria-pressed={settings.notify_on_complete}
           >
             <span className="toggle-knob" />
           </button>
         </div>
-        <p className="hint">Agent完成任务时显示系统通知</p>
+        <p className="hint">主对话任务完成时显示系统通知</p>
       </div>
 
       <div className="actions">
