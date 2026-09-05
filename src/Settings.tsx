@@ -7,6 +7,8 @@ import "./Settings.css";
 type AppSettings = {
   idle_ms: number;
   notify_on_complete: boolean;
+  notify_ntfy: boolean;
+  ntfy_topic: string;
   always_on_top: boolean;
   show_hover_tooltip: boolean;
   auto_launch_with_cursor: boolean;
@@ -24,6 +26,8 @@ function Settings() {
   const [settings, setSettings] = useState<AppSettings>({
     idle_ms: 30000,
     notify_on_complete: false,
+    notify_ntfy: true,
+    ntfy_topic: "",
     always_on_top: true,
     show_hover_tooltip: true,
     auto_launch_with_cursor: false,
@@ -134,7 +138,7 @@ function Settings() {
             <span className="toggle-knob" />
           </button>
         </div>
-        <p className="hint">Agent 会话开始时自动启动红绿灯（需先手动运行过一次）</p>
+        <p className="hint">Cursor 打开工作区时自动启动红绿灯（需先手动运行过一次）</p>
       </div>
 
       <div className="setting-row">
@@ -151,7 +155,38 @@ function Settings() {
             <span className="toggle-knob" />
           </button>
         </div>
-        <p className="hint">主对话任务完成时显示系统通知</p>
+        <p className="hint">主对话任务完成时显示电脑系统通知</p>
+      </div>
+
+      <div className="setting-row">
+        <div className="toggle-row">
+          <label htmlFor="ntfy-toggle">手机 ntfy 提醒</label>
+          <button
+            id="ntfy-toggle"
+            className={`toggle ${settings.notify_ntfy ? "on" : "off"}`}
+            onClick={() => patchSettings({ notify_ntfy: !settings.notify_ntfy })}
+            aria-pressed={settings.notify_ntfy}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+        <p className="hint">完成时推送「任务完成」，红灯时推送「有问题需要处理」</p>
+        <input
+          id="ntfy-topic"
+          className="text-input"
+          type="text"
+          value={settings.ntfy_topic}
+          placeholder="ntfy topic"
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(e) => setSettings({ ...settings, ntfy_topic: e.target.value })}
+          onBlur={(e) => {
+            const ntfy_topic = e.target.value.trim();
+            const next = { ...settings, ntfy_topic };
+            setSettings(next);
+            saveSettings(next);
+          }}
+        />
       </div>
 
       <div className="actions">

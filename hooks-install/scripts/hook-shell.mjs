@@ -16,6 +16,7 @@ if (needsConfirm) {
     blink: false,
     label: "待确认命令",
     detail: command.slice(0, 200),
+    _hookEvent: input.hook_event_name ?? "",
   });
   console.log(
     JSON.stringify({
@@ -27,6 +28,10 @@ if (needsConfirm) {
   process.exit(0);
 }
 
-writeState("yellow", { blink: true, label: "执行命令" });
+writeState("yellow", {
+  blink: true,
+  label: "执行命令",
+  _hookEvent: input.hook_event_name ?? "",
+});
 console.log(JSON.stringify({ permission: "allow" }));
 process.exit(0);

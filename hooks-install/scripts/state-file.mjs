@@ -183,6 +183,27 @@ function mergeTasks(prev, light, extra) {
   return tasks;
 }
 
+// 工具轮次结束后 Cursor 仍会触发 stop，但下一轮模型还没开始，不是用户任务完成
+const TOOL_ROUND_HOOKS = new Set([
+  "pretooluse",
+  "posttooluse",
+  "posttoolusefailure",
+  "beforeshellexecution",
+  "aftershellexecution",
+  "beforemcpexecution",
+  "aftermcpexecution",
+  "beforereadfile",
+  "afterfileedit",
+]);
+
+function normalizeHook(name) {
+  return String(name ?? "").toLowerCase();
+}
+
+function isToolRoundHook(name) {
+  return TOOL_ROUND_HOOKS.has(normalizeHook(name));
+}
+
 // 仅主对话真正结束时才接受绿灯（subagent 的 stop/sessionEnd 会误触）
 function shouldAcceptGreen(tasks, extra) {
   if (tasks.some((t) => t.kind === "subagent")) {
@@ -201,19 +222,27 @@ export function writeState(light, extra = {}) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
 
   const prev = readState();
+  const event = normalizeHook(extra._hookEvent);
   const tasks = mergeTasks(prev, light, extra);
 
   if (light === "green" && !shouldAcceptGreen(tasks, extra)) {
     return;
   }
 
+  const notifyComplete =
+    light === "green" &&
+    (event === "sessionend" ||
+      (event === "stop" && !isToolRoundHook(prev.lastHook)));
+
   const payload = {
     light,
     updatedAt: Date.now(),
     label: DEFAULT_LABELS[light],
     source: "cursor-hook",
+    lastHook: event || prev.lastHook || "",
     ...pickVisible(extra),
     tasks,
+    notifyComplete,
   };
   if (light === "yellow" && payload.blink === undefined) {
     payload.blink = true;

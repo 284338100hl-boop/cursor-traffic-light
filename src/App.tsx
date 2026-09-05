@@ -25,6 +25,8 @@ type TrafficLightPayload = {
 type AppSettings = {
   idle_ms: number;
   notify_on_complete: boolean;
+  notify_ntfy: boolean;
+  ntfy_topic: string;
   always_on_top: boolean;
   show_hover_tooltip: boolean;
   auto_launch_with_cursor: boolean;

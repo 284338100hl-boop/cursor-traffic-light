@@ -2,7 +2,6 @@
   "version": 1,
   "hooks": {
     "sessionStart": [
-      { "command": "node ./hooks/agent-traffic-light/launch-traffic-light.mjs" },
       { "command": "node ./hooks/agent-traffic-light/set-light.mjs green" }
     ],
     "sessionEnd": [
@@ -37,6 +36,9 @@
     ],
     "stop": [
       { "command": "node ./hooks/agent-traffic-light/set-light.mjs green" }
+    ],
+    "workspaceOpen": [
+      { "command": "node ./hooks/agent-traffic-light/launch-traffic-light.mjs" }
     ]
   }
 }

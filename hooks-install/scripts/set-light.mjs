@@ -16,6 +16,7 @@ if (light === "yellow") {
 // --- Cursor hook 事件上下文（stdin 注入 JSON） ---
 const event = input.hook_event_name ?? "";
 const tool = input.tool ?? "";
+extra._hookEvent = event;
 
 // 主会话条目：记录 session_id，用于悬停显示对话名称
 if (input.session_id) {

@@ -8,6 +8,7 @@ writeState("yellow", {
   blink: true,
   label: "调用工具",
   detail: toolName.slice(0, 120),
+  _hookEvent: input.hook_event_name ?? "",
 });
 console.log(JSON.stringify({ permission: "allow" }));
 process.exit(0);
