@@ -75,6 +75,10 @@ select:focus {
   border-color: #22c55e;
 }
 
+.toast-text-input {
+  margin-top: 0;
+}
+
 .hint {
   margin: 6px 0 0 0;
   font-size: 12px;

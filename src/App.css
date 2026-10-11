@@ -1,9 +1,8 @@
-/* 对齐 Figma：细长竖条、gap-5 量级、无底板，窗口透明 */
+/* 横条壳体铺满窗口，拖边改大小 */
 :root {
-  --bulb: 52px;
-  --gap: 12px;
-  --pad-x: 6px;
-  --pad-y: 8px;
+  --gap: 6px;
+  --pad-x: 8px;
+  --pad-y: 4px;
 }
 
 html,
@@ -23,38 +22,40 @@ body,
   width: 100%;
   height: 100%;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: flex-start;
+  padding: 0;
   background: transparent;
 }
 
 .traffic-strip {
   box-sizing: border-box;
-  width: 64px;
-  flex-shrink: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  flex-direction: row;
+  align-items: stretch;
   justify-content: center;
   gap: var(--gap);
   padding: var(--pad-y) var(--pad-x);
-  background: rgba(30, 30, 30, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 1.5rem;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  background: #141414;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  box-shadow: none;
   cursor: move;
 }
 
 .traffic-bulb {
-  width: var(--bulb);
-  height: var(--bulb);
-  flex-shrink: 0;
-  border-radius: 50%;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  border-radius: 8px;
   transition: background-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .traffic-bulb--blink {
-  background-color: #facc15;
+  background-color: #f0c014;
   animation: yellow-blink 3.2s cubic-bezier(0.37, 0, 0.63, 1) infinite;
   will-change: background-color, box-shadow, opacity;
 }
@@ -62,38 +63,37 @@ body,
 @keyframes yellow-blink {
   0%,
   100% {
-    background-color: #facc15;
+    background-color: #f0c014;
     box-shadow:
-      0 0 32px rgba(250, 204, 21, 0.6),
-      inset 0 0 16px rgba(255, 255, 255, 0.2);
+      0 0 22px rgba(240, 192, 20, 0.75),
+      inset 0 0 10px rgba(255, 255, 255, 0.18);
     opacity: 1;
   }
   22% {
     background-color: #c9a012;
     box-shadow:
-      0 0 18px rgba(250, 204, 21, 0.35),
-      inset 0 0 12px rgba(255, 255, 255, 0.12);
+      0 0 14px rgba(240, 192, 20, 0.4),
+      inset 0 0 8px rgba(255, 255, 255, 0.12);
     opacity: 0.78;
   }
   50% {
-    background-color: #4a4020;
+    background-color: #3d3518;
     box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.4);
     opacity: 0.5;
   }
   78% {
     background-color: #c9a012;
     box-shadow:
-      0 0 18px rgba(250, 204, 21, 0.35),
-      inset 0 0 12px rgba(255, 255, 255, 0.12);
+      0 0 14px rgba(240, 192, 20, 0.4),
+      inset 0 0 8px rgba(255, 255, 255, 0.12);
     opacity: 0.78;
   }
 }
 
-/* 悬停任务列表 tooltip（显示在扩展出的右侧区域） */
+/* 悬停任务列表 tooltip（显示在灯条右侧） */
 .tooltip {
-  position: fixed;
-  left: 68px;
-  top: 12px;
+  position: relative;
+  margin-left: 8px;
   z-index: 1001;
   display: flex;
   flex-direction: column;
@@ -146,4 +146,111 @@ body,
   height: 1px;
   background: rgba(255, 255, 255, 0.1);
   margin: 4px 0;
+}
+
+.app-root.collapsed .traffic-strip {
+  padding: 2px;
+  border-radius: 4px;
+  gap: 0;
+}
+
+.peek-lamp {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 3px;
+}
+
+.context-menu--window {
+  position: static;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.light-toast {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: #141414;
+  color: #f0f0f0;
+  cursor: pointer;
+}
+
+.light-toast--left {
+  animation: toast-from-left 0.22s ease-out;
+}
+.light-toast--right {
+  animation: toast-from-right 0.22s ease-out;
+}
+.light-toast--top {
+  animation: toast-from-top 0.22s ease-out;
+}
+.light-toast--bottom {
+  animation: toast-from-bottom 0.22s ease-out;
+}
+
+.light-toast-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.light-toast-text {
+  font-size: 13px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes toast-from-left {
+  from {
+    transform: translateX(-16px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes toast-from-right {
+  from {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes toast-from-top {
+  from {
+    transform: translateY(-16px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes toast-from-bottom {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
 }

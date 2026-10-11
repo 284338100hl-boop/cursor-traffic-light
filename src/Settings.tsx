@@ -12,6 +12,7 @@ type AppSettings = {
   always_on_top: boolean;
   show_hover_tooltip: boolean;
   auto_launch_with_cursor: boolean;
+  toast_text: string;
 };
 
 const IDLE_MS_OPTIONS = [
@@ -31,6 +32,7 @@ function Settings() {
     always_on_top: true,
     show_hover_tooltip: true,
     auto_launch_with_cursor: false,
+    toast_text: "状态变化",
   });
   const [saved, setSaved] = useState(false);
 
@@ -120,6 +122,26 @@ function Settings() {
           </button>
         </div>
         <p className="hint">鼠标悬停红绿灯时显示当前对话标题</p>
+      </div>
+
+      <div className="setting-row">
+        <label htmlFor="toast-text">贴边通知文字</label>
+        <input
+          id="toast-text"
+          className="text-input toast-text-input"
+          type="text"
+          value={settings.toast_text}
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(e) => setSettings({ ...settings, toast_text: e.target.value })}
+          onBlur={(e) => {
+            const toast_text = e.target.value.trim();
+            const next = { ...settings, toast_text };
+            setSettings(next);
+            saveSettings(next);
+          }}
+        />
+        <p className="hint">贴边缩小后，灯色变化时显示这段文字</p>
       </div>
 
       <div className="setting-row">

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -34,11 +34,9 @@ type AppSettings = {
 
 const DEFAULT_IDLE_MS = 30_000;
 
-// 窗口尺寸：悬停时从窄条扩展出 tooltip 区域
-const MAIN_W = 64;
-const MAIN_H = 204;
-const TOOLTIP_W = 320;
-const MENU_MIN_W = 108;
+const MAIN_W = 140;
+const MAIN_H = 36;
+const TOOLTIP_EXTRA = 260;
 
 const LIGHTS: LightState[] = ["red", "yellow", "green"];
 
@@ -48,18 +46,18 @@ const LIGHT_STYLE: Record<
 > = {
   red: {
     on: "#ef4444",
-    off: "#3f1f1f",
-    glow: "0 0 32px rgba(239, 68, 68, 0.6), inset 0 0 16px rgba(255, 255, 255, 0.2)",
+    off: "#4d2226",
+    glow: "0 0 22px rgba(239, 68, 68, 0.55), inset 0 0 10px rgba(255, 255, 255, 0.16)",
   },
   yellow: {
-    on: "#facc15",
-    off: "#3f3f1f",
-    glow: "0 0 32px rgba(250, 204, 21, 0.6), inset 0 0 16px rgba(255, 255, 255, 0.2)",
+    on: "#f0c014",
+    off: "#3d3518",
+    glow: "0 0 22px rgba(240, 192, 20, 0.75), inset 0 0 10px rgba(255, 255, 255, 0.18)",
   },
   green: {
     on: "#22c55e",
-    off: "#1f3f2f",
-    glow: "0 0 32px rgba(34, 197, 94, 0.6), inset 0 0 16px rgba(255, 255, 255, 0.2)",
+    off: "#1c3c32",
+    glow: "0 0 22px rgba(34, 197, 94, 0.55), inset 0 0 10px rgba(255, 255, 255, 0.16)",
   },
 };
 
@@ -85,9 +83,12 @@ function App() {
   const [now, setNow] = useState(Date.now());
   const [idleMs, setIdleMs] = useState(DEFAULT_IDLE_MS);
   const [showHoverTooltip, setShowHoverTooltip] = useState(true);
-  const [menuVisible, setMenuVisible] = useState(false);
-  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
   const [tooltipVisible, setTooltipVisible] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const expanding = useRef(false);
+  const dragStart = useRef<{ x: number; y: number } | null>(null);
+  const userDragging = useRef(false);
+  const prevDisplay = useRef<LightState | null>(null);
 
   useEffect(() => {
     const tick = window.setInterval(() => setNow(Date.now()), 500);
@@ -147,53 +148,73 @@ function App() {
     };
   }, []);
 
-  // 点击其他地方关闭菜单
   useEffect(() => {
-    if (!menuVisible) return;
-    const closeMenu = () => setMenuVisible(false);
-    window.addEventListener("click", closeMenu);
-    return () => window.removeEventListener("click", closeMenu);
-  }, [menuVisible]);
+    let cancelled = false;
+    let unResized: (() => void) | undefined;
+    let unMoved: (() => void) | undefined;
+    let unDock: (() => void) | undefined;
+    let moveTimer: number | undefined;
+    void (async () => {
+      const win = getCurrentWindow();
+      const moved = await win.onMoved(() => {
+        if (!userDragging.current) return;
+        window.clearTimeout(moveTimer);
+        moveTimer = window.setTimeout(() => {
+          userDragging.current = false;
+          void invoke("dock_drag_end");
+        }, 280);
+      });
+      unDock = await listen<{ collapsed: boolean }>("dock-changed", (event) => {
+        setCollapsed(event.payload.collapsed);
+      });
+      if (cancelled) {
+        moved();
+        unDock?.();
+        return;
+      }
+      unMoved = moved;
+    })();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(moveTimer);
+      unResized?.();
+      unMoved?.();
+      unDock?.();
+    };
+  }, []);
 
-  const restoreWindowWidth = useCallback(() => {
-    const w = tooltipVisible && showHoverTooltip ? TOOLTIP_W : MAIN_W;
+  const applyBaseSize = useCallback(() => {
+    if (collapsed) return;
+    expanding.current = false;
     void getCurrentWindow()
-      .setSize(new LogicalSize(w, MAIN_H))
+      .setSize(new LogicalSize(MAIN_W, MAIN_H))
       .catch(() => {});
-  }, [tooltipVisible, showHoverTooltip]);
-
-  useEffect(() => {
-    if (menuVisible) return;
-    restoreWindowWidth();
-  }, [menuVisible, restoreWindowWidth]);
+  }, [collapsed]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button === 2) {
       e.preventDefault();
-      const x = e.clientX;
-      const y = e.clientY;
-      const menuW = Math.max(MAIN_W, x + MENU_MIN_W + 8);
-      void getCurrentWindow()
-        .setSize(new LogicalSize(menuW, MAIN_H))
-        .catch(() => {})
-        .finally(() => {
-          setMenuPos({ x, y });
-          setMenuVisible(true);
-        });
+      void invoke("show_context_menu", {
+        clientX: e.clientX,
+        clientY: e.clientY,
+      });
     } else if (e.button === 0) {
-      // 左键拖动
+      dragStart.current = { x: e.clientX, y: e.clientY };
+      userDragging.current = true;
       void getCurrentWindow().startDragging().catch(() => {});
     }
   }, []);
 
-  const handleSettings = useCallback(() => {
-    void invoke("show_settings_window");
-    setMenuVisible(false);
-  }, []);
-
-  const handleExit = useCallback(() => {
-    void getCurrentWindow().close().catch(() => {});
-  }, []);
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    if (!collapsed || e.button !== 0) return;
+    const start = dragStart.current;
+    dragStart.current = null;
+    if (!start) return;
+    const dist = Math.hypot(e.clientX - start.x, e.clientY - start.y);
+    if (dist < 5) {
+      void invoke("expand_dock");
+    }
+  }, [collapsed]);
 
   const fileLight = normalizeLight(fileState.light);
   const lastAt = fileState.updatedAt ?? 0;
@@ -215,96 +236,108 @@ function App() {
       ? null
       : (fileState.tasks ?? []).find((t) => t.kind === "main")?.name ?? null;
 
-  // 悬停时扩宽窗口显示任务列表，移开后恢复
   const handleMouseEnter = useCallback(() => {
-    if (!showHoverTooltip) return;
+    if (!showHoverTooltip || collapsed) return;
     setTooltipVisible(true);
+    expanding.current = true;
     void getCurrentWindow()
-      .setSize(new LogicalSize(TOOLTIP_W, MAIN_H))
+      .setSize(new LogicalSize(MAIN_W + TOOLTIP_EXTRA, MAIN_H))
       .catch(() => {});
-  }, [showHoverTooltip]);
+  }, [showHoverTooltip, collapsed]);
 
   const handleMouseLeave = useCallback(() => {
-    if (!showHoverTooltip) return;
+    if (!showHoverTooltip || collapsed) return;
     setTooltipVisible(false);
-    if (menuVisible) return;
-    void getCurrentWindow()
-      .setSize(new LogicalSize(MAIN_W, MAIN_H))
-      .catch(() => {});
-  }, [showHoverTooltip, menuVisible]);
+    applyBaseSize();
+  }, [showHoverTooltip, collapsed, applyBaseSize]);
 
   useEffect(() => {
-    if (showHoverTooltip || menuVisible) return;
+    if (showHoverTooltip) return;
     setTooltipVisible(false);
-    void getCurrentWindow()
-      .setSize(new LogicalSize(MAIN_W, MAIN_H))
-      .catch(() => {});
-  }, [showHoverTooltip, menuVisible]);
+    applyBaseSize();
+  }, [showHoverTooltip, applyBaseSize]);
+
+  useEffect(() => {
+    if (tooltipVisible) return;
+    applyBaseSize();
+  }, [tooltipVisible, applyBaseSize]);
+
+  useEffect(() => {
+    if (prevDisplay.current === null) {
+      prevDisplay.current = displayLight;
+      return;
+    }
+    // 黄灯是发出问题后立刻写入的，不提示；只在停顿转红、任务完成转绿时提示
+    if (
+      prevDisplay.current !== displayLight &&
+      collapsed &&
+      displayLight !== "yellow"
+    ) {
+      void invoke("show_light_toast", { light: displayLight });
+    }
+    prevDisplay.current = displayLight;
+  }, [displayLight, collapsed]);
 
   return (
-    <div className="app-root">
+    <div className={`app-root${collapsed ? " collapsed" : ""}`}>
       <div
         className="traffic-strip"
         onMouseDown={handleMouseDown}
+        onClick={handleClick}
         onContextMenu={(e) => e.preventDefault()}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        {LIGHTS.map((light) => {
-          const active = displayLight === light;
-          const style = LIGHT_STYLE[light];
-          const className = [
-            "traffic-bulb",
-            active && light === "yellow" && yellowBlink
-              ? "traffic-bulb--blink"
-              : "",
-          ]
-            .filter(Boolean)
-            .join(" ");
+        {collapsed ? (
+          <div
+            className="peek-lamp"
+            style={{
+              backgroundColor: LIGHT_STYLE[displayLight].on,
+              boxShadow: LIGHT_STYLE[displayLight].glow,
+            }}
+          />
+        ) : (
+          LIGHTS.map((light) => {
+            const active = displayLight === light;
+            const style = LIGHT_STYLE[light];
+            const className = [
+              "traffic-bulb",
+              active && light === "yellow" && yellowBlink
+                ? "traffic-bulb--blink"
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" ");
 
-          return (
-            <div
-              key={light}
-              className={className}
-              style={
-                active && !(light === "yellow" && yellowBlink)
-                  ? {
-                      backgroundColor: style.on,
-                      boxShadow: style.glow,
-                    }
-                  : active && light === "yellow" && yellowBlink
-                    ? undefined
-                    : {
-                        backgroundColor: style.off,
-                        boxShadow: "inset 0 2px 8px rgba(0, 0, 0, 0.4)",
+            return (
+              <div
+                key={light}
+                className={className}
+                style={
+                  active && !(light === "yellow" && yellowBlink)
+                    ? {
+                        backgroundColor: style.on,
+                        boxShadow: style.glow,
                       }
-              }
-              aria-label={ARIA[light]}
-            />
-          );
-        })}
+                    : active && light === "yellow" && yellowBlink
+                      ? undefined
+                      : {
+                          backgroundColor: style.off,
+                          boxShadow: "inset 0 2px 8px rgba(0, 0, 0, 0.4)",
+                        }
+                }
+                aria-label={ARIA[light]}
+              />
+            );
+          })
+        )}
       </div>
 
-      {tooltipVisible && showHoverTooltip && (
+      {tooltipVisible && showHoverTooltip && !collapsed && (
         <div className="tooltip">
           <span className="tooltip-name">
             {currentTitle ?? "暂无任务"}
           </span>
-        </div>
-      )}
-
-      {menuVisible && (
-        <div
-          className="context-menu"
-          style={{ left: menuPos.x, top: menuPos.y }}
-        >
-          <div className="menu-item" onClick={handleSettings}>
-            设置
-          </div>
-          <div className="menu-divider" />
-          <div className="menu-item" onClick={handleExit}>
-            退出
-          </div>
         </div>
       )}
     </div>
