@@ -230,11 +230,12 @@ function App() {
   const yellowBlink =
     !isIdle && fileLight === "yellow" && fileState.blink !== false;
 
-  // 悬停内容：只显示主对话标题（单行）；空闲显示"暂无任务"
+  // 悬停内容跟灯色解耦：只看 tasks。真正完成后 hooks 会清空 tasks。
+  const activityTasks = fileState.tasks ?? [];
   const currentTitle =
-    fileLight === "green"
-      ? null
-      : (fileState.tasks ?? []).find((t) => t.kind === "main")?.name ?? null;
+    activityTasks.find((t) => t.kind === "main")?.name ??
+    activityTasks.find((t) => t.kind === "subagent")?.name ??
+    null;
 
   const handleMouseEnter = useCallback(() => {
     if (!showHoverTooltip || collapsed) return;

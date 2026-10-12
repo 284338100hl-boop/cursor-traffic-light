@@ -173,11 +173,9 @@ function mergeTasks(prev, light, extra) {
     if (idx >= 0) tasks.splice(idx, 1);
   }
 
-  // 空闲/结束时只保留 main 会话
+  // 真正空闲时清空任务列表；悬停文案只看 tasks，不再依赖灯色
   if (light === "green") {
-    for (let i = tasks.length - 1; i >= 0; i--) {
-      if (tasks[i].kind !== "main") tasks.splice(i, 1);
-    }
+    return [];
   }
 
   return tasks;
@@ -204,16 +202,29 @@ function isToolRoundHook(name) {
   return TOOL_ROUND_HOOKS.has(normalizeHook(name));
 }
 
-// 仅主对话真正结束时才接受绿灯（subagent 的 stop/sessionEnd 会误触）
-function shouldAcceptGreen(tasks, extra) {
-  if (tasks.some((t) => t.kind === "subagent")) {
+// 是否应接受绿灯。必须基于写入前的 tasks（mergeTasks 在 green 时会清掉 subagent，
+// 若先 merge 再检查，子任务保护永远不会生效）。
+function shouldAcceptGreen(prevTasks, extra, prev) {
+  const event = normalizeHook(extra._hookEvent);
+
+  // 工具轮次后的 stop：模型往往马上继续，不是主对话真正结束
+  if (event === "stop" && isToolRoundHook(prev.lastHook)) {
     return false;
   }
-  const mainTask = tasks.find((t) => t.kind === "main");
+
+  if (prevTasks.some((t) => t.kind === "subagent")) {
+    return false;
+  }
+
+  const mainTask = prevTasks.find((t) => t.kind === "main");
   if (extra._sessionId && mainTask?.id && extra._sessionId !== mainTask.id) {
     return false;
   }
   return true;
+}
+
+function tasksFrom(state) {
+  return Array.isArray(state?.tasks) ? state.tasks : [];
 }
 
 export function writeState(light, extra = {}) {
@@ -223,23 +234,34 @@ export function writeState(light, extra = {}) {
 
   const prev = readState();
   const event = normalizeHook(extra._hookEvent);
-  const tasks = mergeTasks(prev, light, extra);
 
-  if (light === "green" && !shouldAcceptGreen(tasks, extra)) {
-    return;
+  let base = prev;
+  if (light === "green") {
+    if (!shouldAcceptGreen(tasksFrom(prev), extra, prev)) {
+      return;
+    }
+    // 与 PreToolUse(Task) 并发时，stop 可能读到尚未登记 subagent 的旧快照；
+    // 落盘前再读一次，避免误绿把刚写入的子任务冲掉。
+    const latest = readState();
+    if (!shouldAcceptGreen(tasksFrom(latest), extra, latest)) {
+      return;
+    }
+    base = latest;
   }
+
+  const tasks = mergeTasks(base, light, extra);
 
   const notifyComplete =
     light === "green" &&
     (event === "sessionend" ||
-      (event === "stop" && !isToolRoundHook(prev.lastHook)));
+      (event === "stop" && !isToolRoundHook(base.lastHook)));
 
   const payload = {
     light,
     updatedAt: Date.now(),
     label: DEFAULT_LABELS[light],
     source: "cursor-hook",
-    lastHook: event || prev.lastHook || "",
+    lastHook: event || base.lastHook || "",
     ...pickVisible(extra),
     tasks,
     notifyComplete,
