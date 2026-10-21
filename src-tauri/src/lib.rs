@@ -617,6 +617,14 @@ fn set_settings(app: AppHandle, settings: AppSettings) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.set_always_on_top(settings.always_on_top);
     }
+    #[cfg(windows)]
+    win_persist::set_want_topmost(settings.always_on_top);
+    #[cfg(windows)]
+    if settings.always_on_top {
+        if let Some(window) = app.get_webview_window("main") {
+            win_persist::restore_visible_topmost(&window, true);
+        }
+    }
     let _ = app.emit("settings-changed", settings);
 }
 
