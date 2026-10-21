@@ -47,7 +47,7 @@
         "label": "menu",
         "title": "菜单",
         "width": 120,
-        "height": 78,
+        "height": 96,
         "resizable": false,
         "decorations": false,
         "alwaysOnTop": true,

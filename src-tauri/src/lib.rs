@@ -287,6 +287,9 @@ enum DockEdge {
 
 const LIGHT_W: f64 = 140.0;
 const LIGHT_H: f64 = 36.0;
+/// Fits 设置 / 退出 + divider + padding (78 was clipping 退出).
+const MENU_W: f64 = 120.0;
+const MENU_H: f64 = 96.0;
 
 fn light_physical(scale: f64) -> (u32, u32) {
     (
@@ -646,8 +649,27 @@ fn show_context_menu(app: AppHandle, client_x: f64, client_y: f64) {
     let Ok(scale) = main.scale_factor() else {
         return;
     };
-    let x = pos.x + (client_x * scale).round() as i32;
-    let y = pos.y + (client_y * scale).round() as i32;
+    let menu_w = (MENU_W * scale).round() as i32;
+    let menu_h = (MENU_H * scale).round() as i32;
+    let _ = menu.set_size(LogicalSize::new(MENU_W, MENU_H));
+
+    let mut x = pos.x + (client_x * scale).round() as i32;
+    let mut y = pos.y + (client_y * scale).round() as i32;
+
+    // Keep the whole menu on-screen (flip above/left when near edges).
+    if let Some((origin, msize, _)) = monitor_bounds(&main) {
+        let right = origin.x + msize.width as i32;
+        let bottom = origin.y + msize.height as i32;
+        if x + menu_w > right {
+            x = (x - menu_w).max(origin.x);
+        }
+        if y + menu_h > bottom {
+            y = (y - menu_h).max(origin.y);
+        }
+        x = clamp_axis(x, menu_w as u32, origin.x, msize.width);
+        y = clamp_axis(y, menu_h as u32, origin.y, msize.height);
+    }
+
     let _ = menu.set_position(PhysicalPosition::new(x, y));
     let _ = menu.show();
     let _ = menu.set_focus();
