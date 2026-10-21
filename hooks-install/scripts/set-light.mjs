@@ -14,29 +14,29 @@ if (light === "yellow") {
 }
 
 // --- Cursor hook 事件上下文（stdin 注入 JSON） ---
-const event = input.hook_event_name ?? "";
-const tool = input.tool ?? "";
+const event = String(input.hook_event_name ?? "");
+const tool = String(input.tool_name ?? "");
 extra._hookEvent = event;
+if (input.generation_id) extra._generationId = input.generation_id;
+if (input.status) extra._status = input.status;
+// 子任务内部事件带着父 Task 的 tool_use_id，不能当成主会话
+if (input.parent_tool_call_id) extra._parentToolCallId = input.parent_tool_call_id;
 
-// 主会话条目：记录 session_id，用于悬停显示对话名称
-if (input.session_id) {
-  extra._sessionId = input.session_id;
-}
+if (input.session_id) extra._sessionId = input.session_id;
 
-// 启动 subagent：记录到活跃任务列表
-if (event === "PreToolUse" && tool === "Task") {
+const toolCallId = input.tool_use_id;
+if (event.toLowerCase() === "pretooluse" && tool === "Task" && toolCallId) {
   const desc = input.tool_input?.description ?? input.tool_input?.prompt ?? "子任务";
   extra._addTask = {
-    id: input.tool_call_id ?? `task-${Date.now()}`,
+    id: toolCallId,
     kind: "subagent",
     name: String(desc).replace(/\s+/g, " ").slice(0, 40),
     type: input.tool_input?.subagent_type ?? "Task",
   };
 }
 
-// subagent 结束：按 tool_call_id 移出列表
-if (event === "PostToolUse" && tool === "Task") {
-  extra._removeTaskId = input.tool_call_id;
+if (event.toLowerCase() === "posttooluse" && tool === "Task" && toolCallId) {
+  extra._removeTaskId = toolCallId;
 }
 
 writeState(light, extra);

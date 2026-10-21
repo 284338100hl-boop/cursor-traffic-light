@@ -146,26 +146,51 @@ function pickVisible(extra) {
   return visible;
 }
 
+function childSessionSet(prev) {
+  return new Set(Array.isArray(prev.childSessions) ? prev.childSessions : []);
+}
+
+// 子任务的 afterAgentThought 没有 parent_tool_call_id，但 session 不是主会话。
+// Task 还在时，这种事件不能当成主会话切换。
+function isChildEvent(prev, extra) {
+  const event = normalizeHook(extra._hookEvent);
+  if (event === "beforesubmitprompt" || event === "sessionstart" || event === "sessionend") {
+    return false;
+  }
+  if (extra._parentToolCallId) return true;
+  if (!extra._sessionId) return false;
+  if (childSessionSet(prev).has(extra._sessionId)) return true;
+  const tasks = Array.isArray(prev.tasks) ? prev.tasks : [];
+  const main = tasks.find((t) => t.kind === "main");
+  const open = tasks.some((t) => t.kind === "subagent");
+  return open && !!main?.id && extra._sessionId !== main.id;
+}
+
 // 维护"正在运行的任务"列表：
-//   _sessionId    -> 设置/更新 main 会话条目
+//   _sessionId    -> 仅主会话事件更新 main（子任务有自己的 session_id）
 //   _addTask      -> 加入一个 subagent 条目
 //   _removeTaskId -> 按 id 移除条目
+// 主会话 afterAgentResponse 时，进行中的 Task 已经返回
 function mergeTasks(prev, light, extra) {
   const tasks = Array.isArray(prev.tasks) ? [...prev.tasks] : [];
+  const event = normalizeHook(extra._hookEvent);
 
-  if (extra._sessionId) {
-    // 每次事件都重新提取标题：成本低（读一行），可自愈旧会话残留的错误标题
+  if (extra._sessionId && !isChildEvent(prev, extra)) {
     const idx = tasks.findIndex((t) => t.kind === "main");
+    const switched = idx >= 0 && tasks[idx].id !== extra._sessionId;
+    if (switched) {
+      for (let i = tasks.length - 1; i >= 0; i--) {
+        if (tasks[i].kind !== "main") tasks.splice(i, 1);
+      }
+    }
     const name = findSessionTitle(extra._sessionId) ?? "主对话";
     const mainTask = { id: extra._sessionId, kind: "main", name };
     if (idx >= 0) tasks[idx] = mainTask;
     else tasks.unshift(mainTask);
   }
 
-  if (extra._addTask) {
-    if (!tasks.some((t) => t.id === extra._addTask.id)) {
-      tasks.push(extra._addTask);
-    }
+  if (extra._addTask && !tasks.some((t) => t.id === extra._addTask.id)) {
+    tasks.push(extra._addTask);
   }
 
   if (extra._removeTaskId) {
@@ -173,7 +198,12 @@ function mergeTasks(prev, light, extra) {
     if (idx >= 0) tasks.splice(idx, 1);
   }
 
-  // 空闲/结束时只保留 main 会话
+  if (event === "afteragentresponse" && !isChildEvent(prev, extra)) {
+    for (let i = tasks.length - 1; i >= 0; i--) {
+      if (tasks[i].kind !== "main") tasks.splice(i, 1);
+    }
+  }
+
   if (light === "green") {
     for (let i = tasks.length - 1; i >= 0; i--) {
       if (tasks[i].kind !== "main") tasks.splice(i, 1);
@@ -204,16 +234,72 @@ function isToolRoundHook(name) {
   return TOOL_ROUND_HOOKS.has(normalizeHook(name));
 }
 
-// 仅主对话真正结束时才接受绿灯（subagent 的 stop/sessionEnd 会误触）
-function shouldAcceptGreen(tasks, extra) {
-  if (tasks.some((t) => t.kind === "subagent")) {
+// 绿灯只在主会话这一轮真正结束时写入。
+// 未返回的 Task 还在列表里时拒绝；completed 的 stop 还必须对上本轮 afterAgentResponse 的 generation。
+function shouldAcceptGreen(prev, extra) {
+  const event = normalizeHook(extra._hookEvent);
+  if (event === "sessionstart" || event === "sessionend") return true;
+
+  const prevTasks = Array.isArray(prev.tasks) ? prev.tasks : [];
+  const mainTask = prevTasks.find((t) => t.kind === "main");
+  if (
+    !isChildEvent(prev, extra) &&
+    extra._sessionId &&
+    mainTask?.id &&
+    extra._sessionId !== mainTask.id
+  ) {
     return false;
   }
-  const mainTask = tasks.find((t) => t.kind === "main");
-  if (extra._sessionId && mainTask?.id && extra._sessionId !== mainTask.id) {
+
+  if (extra._status === "aborted" || extra._status === "error") return true;
+
+  const open = prevTasks.filter((t) => t.kind === "subagent" && t.id !== extra._removeTaskId);
+  if (extra._addTask && !open.some((t) => t.id === extra._addTask.id)) open.push(extra._addTask);
+  if (open.length > 0) return false;
+
+  if (
+    event === "stop" &&
+    extra._status === "completed" &&
+    extra._generationId &&
+    prev.responseGen &&
+    extra._generationId !== prev.responseGen
+  ) {
     return false;
   }
+
   return true;
+}
+
+function nextResponseGen(prev, extra) {
+  const event = normalizeHook(extra._hookEvent);
+  const prevTasks = Array.isArray(prev.tasks) ? prev.tasks : [];
+  const mainTask = prevTasks.find((t) => t.kind === "main");
+  const switched =
+    !isChildEvent(prev, extra) &&
+    extra._sessionId &&
+    mainTask?.id &&
+    extra._sessionId !== mainTask.id;
+  if (event === "sessionstart" || switched) return "";
+  if (event === "afteragentresponse" && !isChildEvent(prev, extra) && extra._generationId) {
+    return extra._generationId;
+  }
+  return prev.responseGen || "";
+}
+
+function nextChildSessions(prev, extra, light) {
+  const event = normalizeHook(extra._hookEvent);
+  const sessions = childSessionSet(prev);
+  if (isChildEvent(prev, extra) && extra._sessionId) sessions.add(extra._sessionId);
+  const tasks = Array.isArray(prev.tasks) ? prev.tasks : [];
+  const main = tasks.find((t) => t.kind === "main");
+  const switched =
+    !isChildEvent(prev, extra) &&
+    extra._sessionId &&
+    main?.id &&
+    extra._sessionId !== main.id;
+  const parentDone = event === "afteragentresponse" && !isChildEvent(prev, extra);
+  if (switched || parentDone || light === "green" || event === "sessionstart") return [];
+  return [...sessions];
 }
 
 export function writeState(light, extra = {}) {
@@ -223,11 +309,11 @@ export function writeState(light, extra = {}) {
 
   const prev = readState();
   const event = normalizeHook(extra._hookEvent);
-  const tasks = mergeTasks(prev, light, extra);
+  if (light === "green" && !shouldAcceptGreen(prev, extra)) return;
 
-  if (light === "green" && !shouldAcceptGreen(tasks, extra)) {
-    return;
-  }
+  const tasks = mergeTasks(prev, light, extra);
+  const responseGen = nextResponseGen(prev, extra);
+  const childSessions = nextChildSessions(prev, extra, light);
 
   const notifyComplete =
     light === "green" &&
@@ -243,6 +329,8 @@ export function writeState(light, extra = {}) {
     ...pickVisible(extra),
     tasks,
     notifyComplete,
+    responseGen,
+    childSessions,
   };
   if (light === "yellow" && payload.blink === undefined) {
     payload.blink = true;
