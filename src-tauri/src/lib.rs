@@ -139,7 +139,7 @@ fn emit_state(app: &AppHandle, path: &PathBuf) {
     let _ = app.emit("traffic-light-changed", state);
 }
 
-fn load_settings(app: &AppHandle) -> AppSettings {
+pub(crate) fn load_settings(app: &AppHandle) -> AppSettings {
     if let Ok(store) = app.store(STORE_FILE) {
         let idle_ms = store
             .get(IDLE_MS_KEY)
@@ -833,6 +833,9 @@ fn dock_drag_end(app: AppHandle, dock: tauri::State<AppDock>) {
     }
 }
 
+#[cfg(windows)]
+mod win_persist;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let last_light = Arc::new(Mutex::new("green".to_string()));
@@ -879,7 +882,12 @@ pub fn run() {
                 let _ = window.set_always_on_top(settings.always_on_top);
                 let _ = window.set_resizable(false);
                 let _ = window.set_size(LogicalSize::new(LIGHT_W, LIGHT_H));
+                // 主窗口不占任务栏；退出请用右键菜单「退出」
+                let _ = window.set_skip_taskbar(true);
             }
+
+            #[cfg(windows)]
+            win_persist::install_show_desktop_guard(app.handle().clone(), settings.always_on_top);
 
             // 设置窗口关闭时不退出，只隐藏
             if let Some(window) = app.get_webview_window("settings") {
