@@ -20,6 +20,8 @@ type TrafficLightPayload = {
   label?: string;
   blink?: boolean;
   tasks?: ActivityTask[];
+  /** hooks 在主会话真正结束时置 true；工具轮次误闪绿灯时为 false */
+  notifyComplete?: boolean;
 };
 
 type AppSettings = {
@@ -107,6 +109,7 @@ function App() {
         blink: payload.blink ?? payload.light === "yellow",
         label: payload.label,
         tasks: payload.tasks,
+        notifyComplete: payload.notifyComplete === true,
       });
     };
 
@@ -230,11 +233,15 @@ function App() {
   const yellowBlink =
     !isIdle && fileLight === "yellow" && fileState.blink !== false;
 
-  // 悬停内容：只显示主对话标题（单行）；空闲显示"暂无任务"
+  // 悬停跟灯色解耦：看 tasks / 会话是否仍在进行。
+  // 误闪绿灯时 notifyComplete 为 false，只要还有任务就显示标题，不显示「暂无任务」。
+  const activityTasks = fileState.tasks ?? [];
   const currentTitle =
-    fileLight === "green"
+    fileState.notifyComplete || activityTasks.length === 0
       ? null
-      : (fileState.tasks ?? []).find((t) => t.kind === "main")?.name ?? null;
+      : activityTasks.find((t) => t.kind === "main")?.name ??
+        activityTasks.find((t) => t.kind === "subagent")?.name ??
+        null;
 
   const handleMouseEnter = useCallback(() => {
     if (!showHoverTooltip || collapsed) return;
